@@ -7,13 +7,17 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import SessionAuthentication
+from rest_framework import viewsets, permissions
+from django.shortcuts import get_object_or_404
 
-from .models import User
-from .serializers import RegisterSerializer,ScanLogSerializer,PatientSerializer
+from .models import User, Patient, ScanLog, PatientReport, Appointment
+from .serializers import (
+    RegisterSerializer, ScanLogSerializer, PatientSerializer,
+    ChangePasswordSerializer, PatientReportSerializer, AppointmentSerializer,
+    PatientTriageSerializer
+)
 from .utils.smtp import send_otp_email
 
-from rest_framework import viewsets, permissions
-from .models import Patient, ScanLog
 
 # -----------------------------
 # REGISTER
@@ -25,7 +29,7 @@ class RegisterView(APIView):
         return Response({
             "endpoint": "Register",
             "method": "POST",
-            "required_fields": ["username", "email", "password"]
+            "required_fields": ["username", "email", "password", "role"]
         })
 
     def post(self, request):
@@ -142,24 +146,163 @@ class LoginView(APIView):
                 "refresh": str(refresh),
                 "user_name": user.username,
                 "user_id": str(user.id),
+                "role": user.role,
             },
             "error": None
         })
+
+
+# -----------------------------
+# USER PROFILE
+# -----------------------------
+
+class UserProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+        })
+
+
+# -----------------------------
+# DOCTORS
+# -----------------------------
+
+class DoctorListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        doctors = User.objects.filter(role='doctor')
+        data = [{"id": d.id, "username": d.username} for d in doctors]
+        return Response(data)
+
+
+# -----------------------------
+# PATIENTS (role-aware)
+# -----------------------------
 
 class PatientViewSet(viewsets.ModelViewSet):
     serializer_class = PatientSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Patient.objects.filter(user=self.request.user)
+        user = self.request.user
+        if user.role == 'doctor':
+            return Patient.objects.filter(user=user)
+        elif user.role == 'nurse':
+            return Patient.objects.all()
+        elif user.role == 'patient':
+            return Patient.objects.filter(user=user)
+        return Patient.objects.none()
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+
+# -----------------------------
+# SCAN LOGS (role-aware)
+# -----------------------------
 
 class ScanLogViewSet(viewsets.ModelViewSet):
     serializer_class = ScanLogSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return ScanLog.objects.filter(patient__user=self.request.user)
+        user = self.request.user
+        if user.role == 'doctor':
+            qs = ScanLog.objects.filter(patient__user=user)
+        elif user.role == 'nurse':
+            qs = ScanLog.objects.all()
+        elif user.role == 'patient':
+            qs = ScanLog.objects.filter(patient__user=user)
+        else:
+            qs = ScanLog.objects.none()
+
+        patient_id = self.request.query_params.get('patient')
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+        return qs
+
+
+# -----------------------------
+# PATIENT REPORTS (nurse uploads)
+# -----------------------------
+
+class PatientReportViewSet(viewsets.ModelViewSet):
+    serializer_class = PatientReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = PatientReport.objects.all()
+
+        if user.role == 'patient':
+            qs = qs.filter(patient__user=user)
+
+        patient_id = self.request.query_params.get('patient')
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(uploaded_by=self.request.user)
+
+
+# -----------------------------
+# TRIAGE (nurse sets risk zone)
+# -----------------------------
+
+class PatientTriageView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        patient = get_object_or_404(Patient, pk=pk)
+        serializer = PatientTriageSerializer(patient, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Risk zone updated.", "data": serializer.data})
+        return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# -----------------------------
+# APPOINTMENTS
+# -----------------------------
+
+class AppointmentViewSet(viewsets.ModelViewSet):
+    serializer_class = AppointmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'doctor':
+            return Appointment.objects.filter(doctor=user)
+        elif user.role == 'patient':
+            return Appointment.objects.filter(patient__user=user)
+        elif user.role == 'nurse':
+            return Appointment.objects.all()
+        return Appointment.objects.none()
+
+
+# -----------------------------
+# CHANGE PASSWORD
+# -----------------------------
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ChangePasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            if not user.check_password(serializer.data.get("old_password")):
+                return Response({"error": "Wrong password."}, status=status.HTTP_400_BAD_REQUEST)
+
+            user.set_password(serializer.data.get("new_password"))
+            user.save()
+            return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
+        return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
