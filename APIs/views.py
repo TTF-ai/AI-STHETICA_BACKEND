@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import SessionAuthentication
 from rest_framework import viewsets, permissions
 from django.shortcuts import get_object_or_404
+from ml_models.predictor import predict_lesion
 
 from .models import User, Patient, ScanLog, PatientReport, Appointment
 from .serializers import (
@@ -227,6 +228,18 @@ class ScanLogViewSet(viewsets.ModelViewSet):
         if patient_id:
             qs = qs.filter(patient_id=patient_id)
         return qs
+
+    def perform_create(self, serializer):
+        scan_log = serializer.save(predicted_disease="Calculating...", confidence=0.0)
+        
+        try:
+            image_path = scan_log.image.path
+            top_class, confidence = predict_lesion(image_path)
+            scan_log.predicted_disease = top_class
+            scan_log.confidence = confidence
+            scan_log.save()
+        except Exception as e:
+            print(f"Error predicting lesion: {e}")
 
 
 # -----------------------------

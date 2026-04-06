@@ -45,6 +45,7 @@ class ScanLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScanLog
         fields = '__all__'
+        read_only_fields = ['predicted_disease', 'confidence']
 
 
 class PatientReportSerializer(serializers.ModelSerializer):
