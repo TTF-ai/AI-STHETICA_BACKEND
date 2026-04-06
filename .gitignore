@@ -32,3 +32,9 @@ static/
 *.njsproj
 *.sln
 *.sw?
+
+ml_models/
+*.keras
+*.h5
+*.pt
+*.pth
