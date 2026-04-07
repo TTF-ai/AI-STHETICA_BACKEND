@@ -9,13 +9,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import SessionAuthentication
 from rest_framework import viewsets, permissions
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from ml_models.predictor import predict_lesion
 
-from .models import User, Patient, ScanLog, PatientReport, Appointment
+from .models import User, Patient, ScanLog, PatientReport, Appointment, Prescription
 from .serializers import (
     RegisterSerializer, ScanLogSerializer, PatientSerializer,
     ChangePasswordSerializer, PatientReportSerializer, AppointmentSerializer,
-    PatientTriageSerializer
+    PatientTriageSerializer, PrescriptionSerializer
 )
 from .utils.smtp import send_otp_email
 
@@ -194,9 +195,9 @@ class PatientViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'doctor':
-            return Patient.objects.filter(user=user)
+            return Patient.objects.filter(Q(user=user) | Q(appointments__doctor=user)).distinct()
         elif user.role == 'nurse':
-            return Patient.objects.all()
+            return Patient.objects.filter(user=user)
         elif user.role == 'patient':
             return Patient.objects.filter(user=user)
         return Patient.objects.none()
@@ -216,9 +217,9 @@ class ScanLogViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'doctor':
-            qs = ScanLog.objects.filter(patient__user=user)
+            qs = ScanLog.objects.filter(Q(patient__user=user) | Q(patient__appointments__doctor=user)).distinct()
         elif user.role == 'nurse':
-            qs = ScanLog.objects.all()
+            qs = ScanLog.objects.filter(patient__user=user)
         elif user.role == 'patient':
             qs = ScanLog.objects.filter(patient__user=user)
         else:
@@ -231,15 +232,42 @@ class ScanLogViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         scan_log = serializer.save(predicted_disease="Calculating...", confidence=0.0)
-        
+
         try:
+            from ml_models.predictor import predict_lesion, CLASSES, compute_risk_score
+
             image_path = scan_log.image.path
-            top_class, confidence = predict_lesion(image_path)
+
+            # Single inference returning top class, confidence, and full prob vector
+            top_class, confidence, raw_probs = predict_lesion(image_path)
+
+            # Compute weighted risk score from the raw softmax probabilities
+            risk_score, agg = compute_risk_score(raw_probs)
+
+            # Category thresholds: <44 LOW, 44-66 MEDIUM, >=67 HIGH
+            if risk_score >= 67:
+                risk_category = "HIGH"
+            elif risk_score >= 44:
+                risk_category = "MEDIUM"
+            else:
+                risk_category = "LOW"
+
+            all_probs = {CLASSES[i]: round(float(raw_probs[i]) * 100, 2) for i in range(len(CLASSES))}
+
             scan_log.predicted_disease = top_class
-            scan_log.confidence = confidence
+            scan_log.confidence        = round(confidence, 2)
+            scan_log.risk_score        = round(risk_score, 1)
+            scan_log.risk_category     = risk_category
+            scan_log.all_probs         = all_probs
             scan_log.save()
+
+            print(f"[Scan] {top_class} | conf={confidence:.1f}% | risk={risk_score:.1f} ({risk_category})")
+            print(f"[Scan] Probs: { {k: f'{v:.1f}%' for k, v in all_probs.items()} }")
+
         except Exception as e:
-            print(f"Error predicting lesion: {e}")
+            import traceback
+            print(f"[Scan ERROR] {e}")
+            traceback.print_exc()
 
 
 # -----------------------------
@@ -256,6 +284,10 @@ class PatientReportViewSet(viewsets.ModelViewSet):
 
         if user.role == 'patient':
             qs = qs.filter(patient__user=user)
+        elif user.role == 'nurse':
+            qs = qs.filter(patient__user=user)
+        elif user.role == 'doctor':
+            qs = qs.filter(Q(patient__user=user) | Q(patient__appointments__doctor=user)).distinct()
 
         patient_id = self.request.query_params.get('patient')
         if patient_id:
@@ -319,3 +351,27 @@ class ChangePasswordView(APIView):
             user.save()
             return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
         return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+# -----------------------------
+# PRESCRIPTIONS
+# -----------------------------
+
+class PrescriptionViewSet(viewsets.ModelViewSet):
+    serializer_class = PrescriptionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Prescription.objects.all()
+
+        if user.role == 'patient':
+            qs = qs.filter(patient__user=user)
+        elif user.role == 'nurse':
+            qs = qs.filter(patient__user=user)
+        elif user.role == 'doctor':
+            qs = qs.filter(Q(patient__user=user) | Q(patient__appointments__doctor=user)).distinct()
+
+        patient_id = self.request.query_params.get('patient')
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+        return qs

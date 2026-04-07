@@ -4,7 +4,7 @@ from .views import (
     RegisterView, VerifyView, LoginView, ChangePasswordView,
     UserProfileView, PatientViewSet, ScanLogViewSet,
     PatientReportViewSet, PatientTriageView, AppointmentViewSet,
-    DoctorListView
+    DoctorListView, PrescriptionViewSet
 )
 
 urlpatterns = [
@@ -31,4 +31,7 @@ urlpatterns = [
 
     # Appointments
     path("appointments/", AppointmentViewSet.as_view({'get': 'list', 'post': 'create'}), name="appointments"),
+
+    # Prescriptions
+    path("prescriptions/", PrescriptionViewSet.as_view({'get': 'list', 'post': 'create'}), name="prescriptions"),
 ]

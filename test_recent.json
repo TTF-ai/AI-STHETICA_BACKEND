@@ -1,0 +1,41 @@
+{
+  "D:\\AI-STHETICA_BACKEND\\media\\scans\\20260406-203649-981.jpg.jpeg": {
+    "max_conf": 40.11,
+    "top_class_idx": 2,
+    "all_probs": [
+      11.33,
+      18.43,
+      40.11,
+      5.51,
+      2.34,
+      17.71,
+      4.57
+    ]
+  },
+  "D:\\AI-STHETICA_BACKEND\\media\\scans\\ISIC_0025350.jpg": {
+    "max_conf": 88.54,
+    "top_class_idx": 2,
+    "all_probs": [
+      1.35,
+      0.31,
+      88.54,
+      0.05,
+      6.18,
+      3.55,
+      0.02
+    ]
+  },
+  "D:\\AI-STHETICA_BACKEND\\media\\scans\\ISIC_0029563.jpg": {
+    "max_conf": 79.94,
+    "top_class_idx": 4,
+    "all_probs": [
+      1.67,
+      0.03,
+      6.19,
+      0.03,
+      79.94,
+      12.14,
+      0.0
+    ]
+  }
+}

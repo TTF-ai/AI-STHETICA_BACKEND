@@ -10,6 +10,13 @@ ENV/
 env.bak/
 venv.bak/
 
+# Virtual environments
+venv1/
+env/
+ENV/
+env.bak/
+venv1.bak/
+
 # Environment variables
 .env
 .env.local
@@ -38,3 +45,9 @@ ml_models/
 *.h5
 *.pt
 *.pth
+
+# Test and debug outputs
+test_model.py
+debug_output.txt
+output.txt
+model_diag.json

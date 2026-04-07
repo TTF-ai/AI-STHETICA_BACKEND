@@ -61,6 +61,9 @@ class ScanLog(models.Model):
     image = models.ImageField(upload_to='scans/')
     predicted_disease = models.CharField(max_length=100)
     confidence = models.FloatField()
+    risk_score = models.FloatField(default=0.0)           # weighted 0-100 risk score
+    risk_category = models.CharField(max_length=10, default='LOW')  # LOW / MEDIUM / HIGH
+    all_probs = models.JSONField(default=dict, blank=True) # per-class probabilities
     heatmap_image = models.ImageField(upload_to='heatmaps/', blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -96,3 +99,11 @@ class Appointment(models.Model):
 
     def __str__(self):
         return f"{self.patient.name} → Dr.{self.doctor.username} on {self.date_time}"
+
+class Prescription(models.Model):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='prescriptions')
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Prescription for {self.patient.name}"

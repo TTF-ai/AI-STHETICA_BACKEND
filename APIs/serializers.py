@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Patient, ScanLog, PatientReport, Appointment
+from .models import User, Patient, ScanLog, PatientReport, Appointment, Prescription
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -45,7 +45,7 @@ class ScanLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScanLog
         fields = '__all__'
-        read_only_fields = ['predicted_disease', 'confidence']
+        read_only_fields = ['predicted_disease', 'confidence', 'risk_score', 'risk_category', 'all_probs']
 
 
 class PatientReportSerializer(serializers.ModelSerializer):
@@ -75,3 +75,8 @@ class PatientTriageSerializer(serializers.ModelSerializer):
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True)
+
+class PrescriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Prescription
+        fields = '__all__'
